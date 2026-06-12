@@ -189,6 +189,10 @@ type AdvertisementPayload interface {
 	// ServiceData returns a slice with all the service data present in the
 	// advertising. It may be empty.
 	ServiceData() []ServiceDataElement
+
+	// Appearance returns the GAP Appearance value (AD type 0x19) if present
+	// in the advertisement, or 0 if not available.
+	Appearance() uint16
 }
 
 // AdvertisementFields contains advertisement fields in structured form.
@@ -207,6 +211,10 @@ type AdvertisementFields struct {
 
 	// ServiceData is the service data of the advertisement.
 	ServiceData []ServiceDataElement
+
+	// Appearance is the GAP Appearance value (AD type 0x19). Zero means
+	// not present or unknown.
+	Appearance uint16
 }
 
 // advertisementFields wraps AdvertisementFields to implement the
@@ -253,6 +261,11 @@ func (p *advertisementFields) ManufacturerData() []ManufacturerDataElement {
 // ServiceData returns the underlying ServiceData field.
 func (p *advertisementFields) ServiceData() []ServiceDataElement {
 	return p.AdvertisementFields.ServiceData
+}
+
+// Appearance returns the GAP Appearance value from structured data.
+func (p *advertisementFields) Appearance() uint16 {
+	return p.AdvertisementFields.Appearance
 }
 
 // rawAdvertisementPayload encapsulates a raw advertisement packet. Methods to
@@ -419,6 +432,16 @@ func (buf *rawAdvertisementPayload) ServiceData() []ServiceDataElement {
 		}
 	}
 	return serviceData
+}
+
+// Appearance parses the GAP Appearance value (AD type 0x19) from raw bytes.
+// Returns 0 if not present.
+func (buf *rawAdvertisementPayload) Appearance() uint16 {
+	b := buf.findField(0x19)
+	if len(b) >= 2 {
+		return uint16(b[0]) | uint16(b[1])<<8
+	}
+	return 0
 }
 
 // reset restores this buffer to the original state.

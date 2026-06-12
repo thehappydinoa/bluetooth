@@ -416,6 +416,11 @@ func makeScanResult(props map[string]dbus.Variant) ScanResult {
 		}
 	}
 
+	var appearance uint16
+	if v, ok := props["Appearance"].Value().(uint16); ok {
+		appearance = v
+	}
+
 	return ScanResult{
 		RSSI:    rssi,
 		Address: a,
@@ -425,6 +430,7 @@ func makeScanResult(props map[string]dbus.Variant) ScanResult {
 				ServiceUUIDs:     serviceUUIDs,
 				ManufacturerData: manufacturerData,
 				ServiceData:      serviceData,
+				Appearance:       appearance,
 			},
 		},
 	}

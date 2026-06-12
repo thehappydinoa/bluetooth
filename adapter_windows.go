@@ -31,6 +31,12 @@ var DefaultAdapter = &Adapter{
 	},
 }
 
+// NewAdapter returns the default adapter. Windows does not support
+// selecting a specific adapter by ID; the id parameter is ignored.
+func NewAdapter(id string) *Adapter {
+	return DefaultAdapter
+}
+
 // Enable configures the BLE stack. It must be called before any
 // Bluetooth-related calls (unless otherwise indicated).
 func (a *Adapter) Enable() error {
