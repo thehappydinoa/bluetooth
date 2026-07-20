@@ -34,6 +34,24 @@ type Characteristic struct {
 	permissions CharacteristicPermissions
 }
 
+// secMode converts a SecurityLevel to a SoftDevice connection security mode
+// (security mode 1 with the matching level).
+func secMode(level SecurityLevel) C.ble_gap_conn_sec_mode_t {
+	var mode C.ble_gap_conn_sec_mode_t
+	mode.set_bitfield_sm(1)
+	switch level {
+	case SecurityEncrypted:
+		mode.set_bitfield_lv(2)
+	case SecurityAuthenticated:
+		mode.set_bitfield_lv(3)
+	case SecurityLESCAuthenticated:
+		mode.set_bitfield_lv(4)
+	default:
+		mode.set_bitfield_lv(1) // open link, no security needed
+	}
+	return mode
+}
+
 // AddService creates a new service with the characteristics listed in the
 // Service struct.
 func (a *Adapter) AddService(service *Service) error {
@@ -58,15 +76,20 @@ func (a *Adapter) AddService(service *Service) error {
 		if errCode != 0 {
 			return Error(errCode)
 		}
+		maxLen := C.uint16_t(20) // This is a conservative maximum length.
+		if len(char.Value) > int(maxLen) {
+			// A larger initial value (like a HID report map) must fit.
+			maxLen = C.uint16_t(len(char.Value))
+		}
 		value := C.ble_gatts_attr_t{
 			p_uuid: &charUUID,
 			p_attr_md: &C.ble_gatts_attr_md_t{
-				read_perm:  secModeOpen,
-				write_perm: secModeOpen,
+				read_perm:  secMode(char.ReadSecurity),
+				write_perm: secMode(char.WriteSecurity),
 			},
 			init_len:  C.uint16_t(len(char.Value)),
 			init_offs: 0,
-			max_len:   20, // This is a conservative maximum length.
+			max_len:   maxLen,
 		}
 		if len(char.Value) != 0 {
 			value.p_value = (*C.uint8_t)(unsafe.Pointer(&char.Value[0]))
@@ -80,6 +103,30 @@ func (a *Adapter) AddService(service *Service) error {
 		if char.Handle != nil {
 			char.Handle.handle = handles.value_handle
 			char.Handle.permissions = char.Flags
+		}
+		for _, desc := range char.Descriptors {
+			descUUID, errCode := desc.UUID.shortUUID()
+			if errCode != 0 {
+				return Error(errCode)
+			}
+			attr := C.ble_gatts_attr_t{
+				p_uuid: &descUUID,
+				p_attr_md: &C.ble_gatts_attr_md_t{
+					read_perm: secMode(desc.ReadSecurity),
+					// write_perm is left at its zero value: no access.
+				},
+				init_len: C.uint16_t(len(desc.Value)),
+				max_len:  C.uint16_t(len(desc.Value)),
+			}
+			if len(desc.Value) != 0 {
+				attr.p_value = (*C.uint8_t)(unsafe.Pointer(&desc.Value[0]))
+			}
+			attr.p_attr_md.set_bitfield_vloc(C.BLE_GATTS_VLOC_STACK)
+			var descHandle C.uint16_t
+			errCode = C.sd_ble_gatts_descriptor_add(handles.value_handle, &attr, &descHandle)
+			if errCode != 0 {
+				return Error(errCode)
+			}
 		}
 		if char.Flags.Write() && char.WriteEvent != nil {
 			handlers := append(a.charWriteHandlers, charWriteHandler{

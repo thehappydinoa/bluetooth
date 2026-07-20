@@ -48,6 +48,14 @@ func (a *Advertisement) Configure(options AdvertisementOptions) error {
 		options.Interval = NewDuration(152500 * time.Microsecond) // 152.5ms
 	}
 
+	if options.Appearance != 0 {
+		// Also expose the appearance through the GAP service. Hosts use it to
+		// recognize device types, for example HID keyboards.
+		if err := makeError(C.sd_ble_gap_appearance_set(C.uint16_t(options.Appearance))); err != nil {
+			return err
+		}
+	}
+
 	// Construct payload.
 	// Note that the payload needs to be part of the Advertisement object as the
 	// memory is still used after sd_ble_gap_adv_set_configure returns.
