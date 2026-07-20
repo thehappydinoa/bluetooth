@@ -137,6 +137,7 @@ type DeviceCharacteristic struct {
 	uuidWrapper
 	adapter                      *Adapter
 	characteristic               dbus.BusObject
+	properties                   uint32            // decoded from the BlueZ "Flags" property (standard BLE property bit layout)
 	property                     chan *dbus.Signal // channel where notifications are reported
 	propertiesChangedMatchOption dbus.MatchOption  // the same value must be passed to RemoveMatchSignal
 }
@@ -144,6 +145,46 @@ type DeviceCharacteristic struct {
 // UUID returns the UUID for this DeviceCharacteristic.
 func (c DeviceCharacteristic) UUID() UUID {
 	return c.uuidWrapper
+}
+
+// Properties returns the characteristic's property bitmask (read/write/notify/…)
+// decoded from the BlueZ GattCharacteristic1 "Flags" property. The bit layout is
+// the standard BLE characteristic-properties byte (Broadcast=0x01, Read=0x02,
+// WriteWithoutResponse=0x04, Write=0x08, Notify=0x10, Indicate=0x20), matching
+// the value returned on Windows and macOS so callers can interpret it uniformly.
+func (c DeviceCharacteristic) Properties() uint32 {
+	return c.properties
+}
+
+// parseBlueZFlags maps the BlueZ GattCharacteristic1 "Flags" string array
+// (e.g. ["read", "notify"]) to the standard BLE characteristic-properties bitmask.
+func parseBlueZFlags(flags []string) uint32 {
+	const (
+		propBroadcast            = 0x01
+		propRead                 = 0x02
+		propWriteWithoutResponse = 0x04
+		propWrite                = 0x08
+		propNotify               = 0x10
+		propIndicate             = 0x20
+	)
+	var p uint32
+	for _, f := range flags {
+		switch f {
+		case "broadcast":
+			p |= propBroadcast
+		case "read":
+			p |= propRead
+		case "write-without-response":
+			p |= propWriteWithoutResponse
+		case "write":
+			p |= propWrite
+		case "notify":
+			p |= propNotify
+		case "indicate":
+			p |= propIndicate
+		}
+	}
+	return p
 }
 
 // DiscoverCharacteristics discovers characteristics in this service. Pass a
@@ -184,10 +225,15 @@ func (s DeviceService) DiscoverCharacteristics(uuids []UUID) ([]DeviceCharacteri
 			continue
 		}
 		cuuid, _ := ParseUUID(properties["UUID"].Value().(string))
+		var flags []string
+		if v, ok := properties["Flags"]; ok {
+			flags, _ = v.Value().([]string)
+		}
 		char := DeviceCharacteristic{
 			uuidWrapper:    cuuid,
 			adapter:        s.adapter,
 			characteristic: s.adapter.bus.Object("org.bluez", dbus.ObjectPath(objectPath)),
+			properties:     parseBlueZFlags(flags),
 		}
 
 		if len(uuids) > 0 {

@@ -219,6 +219,15 @@ func (c DeviceCharacteristic) UUID() UUID {
 	return c.uuidWrapper
 }
 
+// Properties returns the characteristic's property bitmask (read/write/notify/…).
+// CoreBluetooth's CBCharacteristicProperties uses the same standard BLE property
+// bit layout (Broadcast=0x01, Read=0x02, WriteWithoutResponse=0x04, Write=0x08,
+// Notify=0x10, Indicate=0x20) as the value returned on Linux and Windows, so
+// callers can interpret it uniformly.
+func (c DeviceCharacteristic) Properties() uint32 {
+	return uint32(c.characteristic.Properties())
+}
+
 // Write replaces the characteristic value with a new value. The
 // call will return after all data has been written.
 func (c DeviceCharacteristic) Write(p []byte) (n int, err error) {
