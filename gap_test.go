@@ -193,3 +193,29 @@ func TestServiceUUIDs(t *testing.T) {
 		}
 	}
 }
+
+// TestConnectableTriState verifies the tri-state Connectable() accessor: a raw
+// advertisement payload never knows connectability (it is not in the AD bytes), and a
+// structured payload reports (value, true) only when the platform populated it.
+func TestConnectableTriState(t *testing.T) {
+	// Raw payload: always unknown.
+	raw := &rawAdvertisementPayload{}
+	if c, known := raw.Connectable(); known || c {
+		t.Errorf("rawAdvertisementPayload.Connectable() = (%v, %v), want (false, false)", c, known)
+	}
+
+	// Structured payload with no connectability set: unknown.
+	unknown := &advertisementFields{AdvertisementFields{LocalName: "x"}}
+	if c, known := unknown.Connectable(); known || c {
+		t.Errorf("unset Connectable() = (%v, %v), want (false, false)", c, known)
+	}
+
+	// Structured payload with connectability populated: known value round-trips.
+	for _, want := range []bool{true, false} {
+		w := want
+		fields := &advertisementFields{AdvertisementFields{Connectable: &w}}
+		if c, known := fields.Connectable(); !known || c != want {
+			t.Errorf("Connectable() = (%v, %v), want (%v, true)", c, known, want)
+		}
+	}
+}

@@ -264,15 +264,60 @@ func getScanResultFromArgs(args *advertisement.BluetoothLEAdvertisementReceivedE
 
 	// Note: the IsRandom bit is never set.
 	localName, _ := winAdv.GetLocalName()
-	result.AdvertisementPayload = &advertisementFields{
-		AdvertisementFields{
-			LocalName:        localName,
-			ServiceUUIDs:     serviceUUIDs,
-			ManufacturerData: manufacturerData,
-		},
+	fields := AdvertisementFields{
+		LocalName:        localName,
+		ServiceUUIDs:     serviceUUIDs,
+		ManufacturerData: manufacturerData,
 	}
+	// Surface the advertising connectability (WinRT IsConnectable) when available so
+	// callers can tell a connectable device from a broadcast-only beacon without a
+	// probe. Unknown on Windows < 1709 (the ...Args2 interface is absent) → left nil.
+	if connectable, known := advertisementConnectable(args); known {
+		fields.Connectable = &connectable
+	}
+	result.AdvertisementPayload = &advertisementFields{fields}
 
 	return result
+}
+
+// iBLEReceivedArgs2Vtbl mirrors winrt-go's IBluetoothLEAdvertisementReceivedEventArgs2
+// vtable layout (advertisement.GUIDiBluetoothLEAdvertisementReceivedEventArgs2). winrt-go
+// declares the vtable slots for this interface but generates no wrapper methods, so we
+// call get_IsConnectable directly. Field order MUST match the WinRT interface.
+type iBLEReceivedArgs2Vtbl struct {
+	ole.IInspectableVtbl
+
+	GetBluetoothAddressType    uintptr
+	GetTransmitPowerLevelInDBm uintptr
+	GetIsAnonymous             uintptr
+	GetIsConnectable           uintptr
+	GetIsScannable             uintptr
+	GetIsDirected              uintptr
+	GetIsScanResponse          uintptr
+}
+
+// advertisementConnectable reports the advertisement's connectability via WinRT's
+// IBluetoothLEAdvertisementReceivedEventArgs2.IsConnectable (Windows 10 1709+). known is
+// false when that interface is unavailable (older Windows) or the call fails, so callers
+// treat the result as "unknown" rather than "non-connectable".
+func advertisementConnectable(args *advertisement.BluetoothLEAdvertisementReceivedEventArgs) (connectable, known bool) {
+	itf, err := args.QueryInterface(ole.NewGUID(advertisement.GUIDiBluetoothLEAdvertisementReceivedEventArgs2))
+	if err != nil || itf == nil {
+		return false, false
+	}
+	defer itf.Release()
+
+	vtbl := (*iBLEReceivedArgs2Vtbl)(unsafe.Pointer(itf.RawVTable))
+	var out uint8 // WinRT boolean is a single byte
+	hr, _, _ := syscall.SyscallN(
+		vtbl.GetIsConnectable,
+		uintptr(unsafe.Pointer(itf)),  // this
+		uintptr(unsafe.Pointer(&out)), // out boolean
+	)
+	if hr != 0 {
+		return false, false
+	}
+	return out != 0, true
 }
 
 func GUIDToUUID(guid syscall.GUID) UUID {

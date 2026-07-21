@@ -260,6 +260,9 @@ func makeScanResult(prph cbgo.Peripheral, advFields cbgo.AdvFields, rssi int) Sc
 				ServiceUUIDs:     serviceUUIDs,
 				ManufacturerData: manufacturerData,
 				ServiceData:      serviceData,
+				// cbgo already exposes CBAdvertisementDataIsConnectable as a tri-state
+				// *bool (nil = the key was absent), so carry the pointer straight through.
+				Connectable: advFields.Connectable,
 			},
 		},
 	}

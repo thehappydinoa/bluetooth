@@ -200,6 +200,17 @@ type AdvertisementPayload interface {
 	// Appearance returns the GAP Appearance value (AD type 0x19) if present
 	// in the advertisement, or 0 if not available.
 	Appearance() uint16
+
+	// Connectable reports whether the advertisement is connectable — i.e. a
+	// central may open a GATT connection to the device (as opposed to a
+	// broadcast-only beacon). The connectability comes from the advertising PDU
+	// type, which is NOT part of the AD payload, so it can only be surfaced by a
+	// platform that exposes it out of band (WinRT IsConnectable, CoreBluetooth
+	// CBAdvertisementDataIsConnectable). The second return value, known, is false
+	// when the platform/transport did not report it — callers MUST treat
+	// (false, false) as "unknown", never as "non-connectable". BlueZ and the raw
+	// advertisement-bytes path do not expose it and return (false, false).
+	Connectable() (connectable, known bool)
 }
 
 // AdvertisementFields contains advertisement fields in structured form.
@@ -222,6 +233,13 @@ type AdvertisementFields struct {
 	// Appearance is the GAP Appearance value (AD type 0x19). Zero means
 	// not present or unknown.
 	Appearance uint16
+
+	// Connectable is the advertising connectability if the platform reported it
+	// (WinRT IsConnectable, CoreBluetooth CBAdvertisementDataIsConnectable), or
+	// nil when unknown (e.g. BlueZ, which does not expose the advertising PDU
+	// type). It is deliberately a pointer so "non-connectable" (false) is
+	// distinguishable from "unknown" (nil). See AdvertisementPayload.Connectable.
+	Connectable *bool
 }
 
 // advertisementFields wraps AdvertisementFields to implement the
@@ -273,6 +291,15 @@ func (p *advertisementFields) ServiceData() []ServiceDataElement {
 // Appearance returns the GAP Appearance value from structured data.
 func (p *advertisementFields) Appearance() uint16 {
 	return p.AdvertisementFields.Appearance
+}
+
+// Connectable returns the advertising connectability from structured data, or
+// (false, false) when the platform did not populate it (unknown).
+func (p *advertisementFields) Connectable() (connectable, known bool) {
+	if p.AdvertisementFields.Connectable == nil {
+		return false, false
+	}
+	return *p.AdvertisementFields.Connectable, true
 }
 
 // rawAdvertisementPayload encapsulates a raw advertisement packet. Methods to
@@ -449,6 +476,13 @@ func (buf *rawAdvertisementPayload) Appearance() uint16 {
 		return uint16(b[0]) | uint16(b[1])<<8
 	}
 	return 0
+}
+
+// Connectable always returns unknown for a raw advertisement payload: the
+// connectability is carried in the advertising PDU header, not in the AD payload
+// bytes this buffer holds, so it cannot be recovered here.
+func (buf *rawAdvertisementPayload) Connectable() (connectable, known bool) {
+	return false, false
 }
 
 // reset restores this buffer to the original state.
